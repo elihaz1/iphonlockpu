@@ -5,6 +5,8 @@ IPHONE_NAME="Your iPhone Name Here"  # Replace with the exact Bluetooth name of 
 
 # RSSI threshold: if the RSSI drops below this value, the screen will lock
 RSSI_THRESHOLD=-65
+CONSECUTIVE_THRESHOLD=3
+LOW_RSSI_COUNT=0
 
 # Log file location
 LOG_FILE="/tmp/iphone-lock-monitor.log"
@@ -36,6 +38,7 @@ while true; do
 
     if [ -z "$RSSI" ]; then
         echo "$TIMESTAMP - RSSI not found. iPhone may be out of range or not connected." | /usr/bin/tee -a "$LOG_FILE"
+        LOW_RSSI_COUNT=0
     else
         echo "$TIMESTAMP - iPhone RSSI: $RSSI" | /usr/bin/tee -a "$LOG_FILE"
 
@@ -55,11 +58,18 @@ while true; do
             fi
         fi
 
-        # Threshold check after trend logic
+        # Threshold logic with 3 consecutive low readings
         if [ "$RSSI" -lt "$RSSI_THRESHOLD" ]; then
-            echo "$TIMESTAMP - RSSI too low. Locking screen..." | /usr/bin/tee -a "$LOG_FILE"
+            LOW_RSSI_COUNT=$((LOW_RSSI_COUNT + 1))
+            echo "$TIMESTAMP - RSSI below threshold ($LOW_RSSI_COUNT consecutive)" | /usr/bin/tee -a "$LOG_FILE"
+        else
+            LOW_RSSI_COUNT=0
+        fi
+
+        if [ "$LOW_RSSI_COUNT" -ge "$CONSECUTIVE_THRESHOLD" ]; then
+            echo "$TIMESTAMP - RSSI too low for $CONSECUTIVE_THRESHOLD consecutive checks. Locking screen..." | /usr/bin/tee -a "$LOG_FILE"
             /usr/bin/pmset displaysleepnow
-            /bin/sleep 5  # Allow time for display sleep to take effect before continuing
+            LOW_RSSI_COUNT=0
         fi
     fi
 

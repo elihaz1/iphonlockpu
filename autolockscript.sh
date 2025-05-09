@@ -31,7 +31,8 @@ SLEEP_INTERVAL=10
 RSSI_HISTORY=()
 MAX_HISTORY=3
 
-# Infinite loop: adaptive polling based on RSSI trend
+# Infinite loop: adaptive polling based on RSSI trend and absolute threshold
+ITERATION_COUNT=0
 while true; do
     RSSI=$(get_rssi)
     TIMESTAMP=$(/bin/date)
@@ -42,17 +43,21 @@ while true; do
     else
         echo "$TIMESTAMP - iPhone RSSI: $RSSI" | /usr/bin/tee -a "$LOG_FILE"
 
-        # Update RSSI history before threshold check
+        # Update RSSI history
         RSSI_HISTORY=("${RSSI_HISTORY[@]}" "$RSSI")
         if [ ${#RSSI_HISTORY[@]} -gt $MAX_HISTORY ]; then
             RSSI_HISTORY=("${RSSI_HISTORY[@]:1}")
         fi
 
-        # Check for downward trend
+        # Check for 3 consecutive drops AND absolute RSSI below -50
         if [ ${#RSSI_HISTORY[@]} -eq $MAX_HISTORY ]; then
-            if [[ "${RSSI_HISTORY[0]}" -gt "${RSSI_HISTORY[1]}" && "${RSSI_HISTORY[1]}" -gt "${RSSI_HISTORY[2]}" ]]; then
+            DROP_1=$((RSSI_HISTORY[0]))
+            DROP_2=$((RSSI_HISTORY[1]))
+            DROP_3=$((RSSI_HISTORY[2]))
+
+            if [[ "$DROP_1" -gt "$DROP_2" && "$DROP_2" -gt "$DROP_3" && "$DROP_3" -lt -50 ]]; then
                 SLEEP_INTERVAL=1
-                echo "$TIMESTAMP - RSSI dropping. Increasing polling rate to 1s." | /usr/bin/tee -a "$LOG_FILE"
+                echo "$TIMESTAMP - RSSI dropping with low value (< -50). Increasing polling rate to 1s." | /usr/bin/tee -a "$LOG_FILE"
             else
                 SLEEP_INTERVAL=10
             fi
@@ -71,6 +76,15 @@ while true; do
             /usr/bin/pmset displaysleepnow
             LOW_RSSI_COUNT=0
         fi
+    fi
+
+        ITERATION_COUNT=$((ITERATION_COUNT + 1))
+
+    # Reset RSSI history periodically without triggering lock
+    if [ "$ITERATION_COUNT" -ge 360 ]; then
+        echo "$TIMESTAMP - Resetting RSSI history after 360 iterations." | /usr/bin/tee -a "$LOG_FILE"
+        RSSI_HISTORY=()
+        ITERATION_COUNT=0
     fi
 
     /bin/sleep $SLEEP_INTERVAL
